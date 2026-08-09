@@ -1,0 +1,11 @@
+# 凭据——绝不提交到版本库(真实 API key 所在)
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 操作系统
+.DS_Store
+Thumbs.db
