@@ -118,6 +118,7 @@ PAGE = """<!DOCTYPE html>
     <button id="btnSave" class="primary">💾 保存配置</button>
     <button id="btnTestAll">🧪 测试全部</button>
     <button id="btnReload">↻ 重新加载</button>
+    <button id="btnRestartProxy">🔄 重启代理</button>
     <span id="proxyStatus" class="hint"></span>
     <span style="flex:1"></span>
     <span id="fuseHint" class="hint"></span>
@@ -355,6 +356,15 @@ $("btnAddCancel").onclick = () => { $("addForm").style.display = "none"; };
 $("btnSave").onclick = save;
 $("btnTestAll").onclick = testAll;
 $("btnReload").onclick = loadConfig;
+$("btnRestartProxy").onclick = async () => {
+  $("btnRestartProxy").disabled = true;
+  try {
+    const r = await api("POST", "/api/restart-proxy", {});
+    msg((r.log || []).join("；") || "代理状态未知", r.ok ? "ok" : "warn", r.ok ? 5000 : 8000);
+    loadConfig();
+  } catch (e) { msg("重启代理失败: " + e.message, "err", 5000); }
+  $("btnRestartProxy").disabled = false;
+};
 loadConfig();
 </script>
 </body>
