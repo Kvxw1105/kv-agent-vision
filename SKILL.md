@@ -88,6 +88,11 @@ python "<SKILL目录>/vision.py" <图片路径> --env-file /path/to/env
 
 > 备用站点（可选）：`VISION2_API_KEY` / `VISION2_BASE_URL` / `VISION2_MODEL`（可继续 `VISION3_*` ...），主站点重试耗尽后自动切换，字段齐全即生效。
 
+## 配置中心（GUI）
+
+零依赖本地 Web 界面管理共享配置（所有 Agent 共用同一份）：运行 `python gui.py`（或双击 `start-gui.bat`）。
+可添加/编辑/删除/排序站点、逐个测通、保存（自动备份），保存后新调用立即生效。
+
 > 修改视觉模型时只需改 env 文件，本 Skill 自动生效。
 
 ## 验证
