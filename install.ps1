@@ -6,7 +6,7 @@ $Dest = Join-Path $Target "agent-vision"
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 
 $Src = $PSScriptRoot
-Copy-Item -Force "$Src\SKILL.md", "$Src\PROMPT.md", "$Src\vision.py", "$Src\.env.example", "$Src\README.md", "$Src\vision-test.png" $Dest
+Copy-Item -Force "$Src\SKILL.md", "$Src\PROMPT.md", "$Src\vision.py", "$Src\gui.py", "$Src\start-gui.bat", "$Src\.env.example", "$Src\README.md", "$Src\vision-test.png" $Dest
 # 本地已配置 .env 时一并带上(仓库版无 .env,安装后需 cp .env.example .env 填 key)
 if (Test-Path "$Src\.env") { Copy-Item -Force "$Src\.env" $Dest }
 
@@ -14,3 +14,5 @@ Write-Host "✔ agent-vision 已安装到: $Dest"
 Write-Host ""
 Write-Host "验证是否可用:"
 Write-Host "  `$env:PYTHONIOENCODING='utf-8'; python `"$Dest\vision.py`" `"$Dest\vision-test.png`" --simple"
+Write-Host "配置中心(可选):"
+Write-Host "  python `"$Dest\gui.py`"   # 或双击 start-gui.bat"
