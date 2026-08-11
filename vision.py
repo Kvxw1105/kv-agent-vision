@@ -119,63 +119,104 @@ def image_path_to_data_url(path):
     return f"data:{mime};base64,{base64.b64encode(image_path.read_bytes()).decode()}"
 
 
+def _config_sites():
+    """按优先级返回视觉站点列表：主站点(VISION_*) + 可选备用站点(VISION2_*、VISION3_* ...)。
+
+    备用站点编号依次后延，某编号的 BASE_URL / API_KEY / MODEL 任一缺失则跳过该编号；
+    一个都不配时抛错提示（与旧版仅主站点的行为一致）。
+    """
+    sites = []
+    primary = {
+        "base_url": os.environ.get("VISION_BASE_URL", "").strip(),
+        "api_key": os.environ.get("VISION_API_KEY", "").strip(),
+        "model": os.environ.get("VISION_MODEL", "").strip(),
+    }
+    if all(primary.values()):
+        sites.append(primary)
+    index = 2
+    while True:
+        site = {
+            "base_url": os.environ.get(f"VISION{index}_BASE_URL", "").strip(),
+            "api_key": os.environ.get(f"VISION{index}_API_KEY", "").strip(),
+            "model": os.environ.get(f"VISION{index}_MODEL", "").strip(),
+        }
+        if not any(site.values()):
+            break  # 该编号未配置，停止查找
+        if all(site.values()):
+            sites.append(site)
+        index += 1
+    if not sites:
+        _required("VISION_API_KEY")
+    return sites
+
+
 def describe_image(image_url, prompt=None, max_tokens=16384, apply_lang=True):
-    """Describe an image via OpenAI-compatible /chat/completions."""
+    """Describe an image via OpenAI-compatible /chat/completions.
+
+    多站点故障切换：主站点(VISION_*)重试耗尽后自动切换到备用站点
+    (VISION2_* / VISION3_* ...)，全部失败才抛错。
+    """
     if not image_url.startswith(("data:", "http://", "https://")):
         raise VisionError("只支持 data URL 或 http(s) 图片 URL")
-    base_url = _required("VISION_BASE_URL").rstrip("/")
-    api_key = _required("VISION_API_KEY")
-    model = _required("VISION_MODEL")
-    # 保险丝：只允许配置好的视觉 API
-    if not any(allowed in base_url for allowed in ALLOWED_BASE_URLS):
-        raise VisionError(f"配置拒绝：VISION_BASE_URL 必须是已配置的 API（{' / '.join(ALLOWED_BASE_URLS)}），当前为 {base_url}")
-    if not any(allowed in model for allowed in ALLOWED_MODELS):
-        raise VisionError(f"配置拒绝：VISION_MODEL 必须是已配置的模型（{' / '.join(ALLOWED_MODELS)}），当前为 {model}")
+    sites = _config_sites()
     text = prompt or DEFAULT_PROMPT
     if apply_lang:
         instruction = LANG_INSTRUCTIONS.get(os.environ.get("LANG", "zh").strip().lower())
         if instruction:
             text = f"{instruction}\n\n{text}"
-    payload = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": [
-            {"type": "text", "text": text},
-            {"type": "image_url", "image_url": {"url": image_url}},
-        ]}],
-    }
-    request = urllib.request.Request(
-        base_url + "/chat/completions",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json", "Authorization": "Bearer " + api_key},
-    )
-    # 强制直连，绕过系统代理（Windows 系统代理可能导致连接重置/SSL EOF）
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     last_err = None
-    for attempt in range(5):
-        try:
-            with opener.open(request, timeout=240) as resp:
-                data = json.loads(resp.read().decode("utf-8", errors="replace"))
-            content = data.get("choices", [{}])[0].get("message", {}).get("content") or ""
-            if content.strip():
-                return content
-            last_err = VisionError("视觉 API 返回空内容（推理模型可能需更多 max_tokens）")
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")[:500]
-            # 4xx/5xx 中属于服务端抖动的状态码，重试
-            if exc.code in (404, 429, 500, 502, 503, 504):
-                last_err = VisionError(f"视觉 API HTTP {exc.code}: {body}")
+    for site_index, site in enumerate(sites):
+        base_url = site["base_url"].rstrip("/")
+        api_key = site["api_key"]
+        model = site["model"]
+        # 保险丝：只允许配置好的视觉 API
+        if not any(allowed in base_url for allowed in ALLOWED_BASE_URLS):
+            raise VisionError(f"配置拒绝：VISION_BASE_URL 必须是已配置的 API（{' / '.join(ALLOWED_BASE_URLS)}），当前为 {base_url}")
+        if not any(allowed in model for allowed in ALLOWED_MODELS):
+            raise VisionError(f"配置拒绝：VISION_MODEL 必须是已配置的模型（{' / '.join(ALLOWED_MODELS)}），当前为 {model}")
+        payload = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": text},
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ]}],
+        }
+        request = urllib.request.Request(
+            base_url + "/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json", "Authorization": "Bearer " + api_key},
+        )
+        # 强制直连，绕过系统代理（Windows 系统代理可能导致连接重置/SSL EOF）
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        for attempt in range(5):
+            try:
+                with opener.open(request, timeout=240) as resp:
+                    data = json.loads(resp.read().decode("utf-8", errors="replace"))
+                content = data.get("choices", [{}])[0].get("message", {}).get("content") or ""
+                if content.strip():
+                    if site_index:
+                        print(f"[vision] 主站点失败，已切换到备用站点 {base_url}: {last_err}", file=sys.stderr)
+                    return content
+                last_err = VisionError("视觉 API 返回空内容（推理模型可能需更多 max_tokens）")
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="replace")[:500]
+                # 4xx/5xx 中属于服务端抖动的状态码，重试
+                if exc.code in (404, 429, 500, 502, 503, 504):
+                    last_err = VisionError(f"视觉 API HTTP {exc.code}: {body}")
+                    time.sleep(3 * (attempt + 1))
+                    continue
+                raise VisionError(f"视觉 API HTTP {exc.code}: {body}") from exc
+            except urllib.error.URLError as exc:
+                last_err = VisionError(f"视觉 API 网络错误: {exc.reason}")
                 time.sleep(3 * (attempt + 1))
-                continue
-            raise VisionError(f"视觉 API HTTP {exc.code}: {body}") from exc
-        except urllib.error.URLError as exc:
-            last_err = VisionError(f"视觉 API 网络错误: {exc.reason}")
-            time.sleep(3 * (attempt + 1))
-        except ConnectionResetError as exc:
-            last_err = VisionError(f"视觉 API 连接重置: {exc}")
-            time.sleep(3 * (attempt + 1))
-        except (KeyError, IndexError, TypeError) as exc:
-            raise VisionError(f"视觉 API 响应格式异常: {json.dumps(data, ensure_ascii=False)[:500]}") from exc
+            except ConnectionResetError as exc:
+                last_err = VisionError(f"视觉 API 连接重置: {exc}")
+                time.sleep(3 * (attempt + 1))
+            except (KeyError, IndexError, TypeError) as exc:
+                raise VisionError(f"视觉 API 响应格式异常: {json.dumps(data, ensure_ascii=False)[:500]}") from exc
+        if site_index < len(sites) - 1:
+            print(f"[vision] 站点 {base_url} 失败，切换到备用站点: {last_err}", file=sys.stderr)
     raise last_err
 
 
