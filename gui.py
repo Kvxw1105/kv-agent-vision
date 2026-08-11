@@ -121,7 +121,6 @@ PAGE = """<!DOCTYPE html>
     <button id="btnRestartProxy">🔄 重启代理</button>
     <span id="proxyStatus" class="hint"></span>
     <span style="flex:1"></span>
-    <span id="fuseHint" class="hint"></span>
   </div>
 
   <div id="sites"></div>
@@ -144,14 +143,10 @@ PAGE = """<!DOCTYPE html>
   </div>
 
   <details>
-    <summary>说明: 共享配置与保险丝</summary>
+    <summary>说明: 共享配置</summary>
     <div class="hint" style="margin-top:8px">
       所有装配了本能力的本地 Agent 共用同一份 env 配置,保存后新调用立即生效;
-      Codex 视觉代理(127.0.0.1:19100)需重启才加载新配置。<br>
-      保险丝白名单仅允许
-      <code id="fuseUrls"></code>
-      域名与 <code id="fuseModels"></code>
-      系列模型,白名单外站点会保存但调用时被拒绝(需修改 vision.py 的 ALLOWED 列表)。
+      Codex 视觉代理(127.0.0.1:19100)需重启才加载新配置,点上方「🔄 重启代理」即可。
     </div>
   </details>
 </div>
@@ -177,12 +172,6 @@ async function api(method, path, body) {
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(data.error || ("HTTP " + resp.status));
   return data;
-}
-
-function mask(key) {
-  if (!key) return "未设置";
-  if (key.length <= 8) return "***";
-  return key.slice(0, 4) + "..." + key.slice(-4);
 }
 
 function escapeHtml(s) {
@@ -216,8 +205,7 @@ function render() {
         <div class="field"><div class="k">模型</div>
           <div class="v">${escapeHtml(s.model || "(空)")}</div></div>
         <div class="field"><div class="k">API 密钥</div>
-          <div class="v">${escapeHtml(s.api_key ? mask(s.api_key) : "未设置")}
-          ${s.api_key ? `<span class="hint" style="cursor:pointer" onclick="toggleKey(${i})">显示</span>` : ""}</div></div>
+          <div class="v">${escapeHtml(s.api_key_masked || "未设置")}</div></div>
         <div class="ops">
           <button onclick="testSite(${i})">测试</button>
           <button onclick="editSite(${i})">编辑</button>
@@ -252,8 +240,6 @@ async function loadConfig() {
     dirty = false;
     $("envPath").textContent = "共享配置: " + cfg.env_path;
     $("envBadge").textContent = cfg.env_path.includes("codex-deepseek-vision") ? "共享配置" : "自定义 env";
-    $("fuseUrls").textContent = cfg.allowed_base_urls.join(" / ");
-    $("fuseModels").textContent = cfg.allowed_models.join(" / ");
     $("proxyStatus").textContent = cfg.proxy_listening
       ? `视觉代理运行中(${cfg.proxy_port})` : "视觉代理未运行";
     render();
@@ -341,11 +327,10 @@ async function addSite() {
   if (!base_url || !model) { msg("Base URL 和模型名必填", "warn", 3000); return; }
   if (!api_key) { msg("API 密钥必填", "warn", 3000); return; }
   try {
-    const r = await api("POST", "/api/site", { base_url, model, api_key });
+    await api("POST", "/api/site", { base_url, model, api_key });
     $("addBase").value = $("addModel").value = $("addKey").value = "";
     $("addForm").style.display = "none";
     markDirty();
-    if (r.warnings && r.warnings.length) msg("已添加,但注意: " + r.warnings.join("; "), "warn", 6000);
     render();
   } catch (e) { msg(e.message, "err", 4000); }
 }
@@ -502,19 +487,19 @@ class ConfigStore:
                 "base_url": site["base_url"],
                 "model": site["model"],
                 "api_key": bool(site["api_key"]),
-                "api_key_tail": site["api_key"][-4:] if site["api_key"] else "",
+                "api_key_masked": self._mask_key(site["api_key"]),
                 "complete": complete,
                 "issues": [] if complete else ["字段不完整,该站点不会生效"],
             })
         return result
 
-    def fuse_warnings(self, base_url, model):
-        warnings = []
-        if not any(allowed in base_url for allowed in vision.ALLOWED_BASE_URLS):
-            warnings.append("域名不在保险丝白名单,保存后可调用时会拒绝,需更新 vision.py 的 ALLOWED_BASE_URLS")
-        if not any(allowed in model for allowed in vision.ALLOWED_MODELS):
-            warnings.append("模型不在保险丝白名单,保存后可调用时会拒绝,需更新 vision.py 的 ALLOWED_MODELS")
-        return warnings
+    @staticmethod
+    def _mask_key(key):
+        if not key:
+            return "未设置"
+        if len(key) <= 8:
+            return "***"
+        return key[:4] + "..." + key[-4:]
 
 
 def test_site(store, index):
@@ -635,17 +620,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif parsed.path == "/api/config":
             store = self._store()
             with _STATE_LOCK:
-                sites = store.public_sites()
-                for site in sites:
-                    if site["complete"]:
-                        site["issues"] = store.fuse_warnings(
-                            site["base_url"], site["model"])
                 cfg = {
                     "env_path": str(store.env_path),
-                    "sites": sites,
+                    "sites": store.public_sites(),
                     "lang": store.lang,
-                    "allowed_base_urls": vision.ALLOWED_BASE_URLS,
-                    "allowed_models": vision.ALLOWED_MODELS,
                     "proxy_listening": _port_pid(_PROXY_PORT) is not None,
                     "proxy_port": _PROXY_PORT,
                 }
@@ -668,8 +646,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if not api_key:
                         raise ValueError("API 密钥必填")
                     store.add_site(base_url, model, api_key)
-                    warnings = store.fuse_warnings(base_url, model)
-                self._send(200, {"ok": True, "warnings": warnings})
+                self._send(200, {"ok": True})
             elif parsed.path == "/api/save":
                 with _STATE_LOCK:
                     backup = store.save()
