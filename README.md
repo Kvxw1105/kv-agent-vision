@@ -93,7 +93,22 @@ VISION_MODEL=openai/gpt-5.6-luna
 LANG=zh
 ```
 
-加载优先级:环境变量 `VISION_API_KEY/VISION_BASE_URL/VISION_MODEL/LANG` → 脚本同目录 `.env` → `--env-file` 指定文件。
+加载优先级(所有装配了本能力的 Agent **共用同一份共享配置**):
+1. 显式指定:`--env-file` 参数或环境变量 `CODEX_DEEPSEEK_VISION_ENV`
+2. 共享配置:Windows `%LOCALAPPDATA%\codex-deepseek-vision\env` / 其它系统 `~/.config/codex-deepseek-vision/env`
+3. 本地兜底:脚本同目录 `.env`、当前目录 `.env`(仅当前副本局部覆盖用)
+
+## 🖥 配置中心(GUI)
+
+零依赖本地 Web 界面,集中管理共享配置——添加/编辑/删除站点、调整优先级、逐个测通、一键保存(自动备份):
+
+```bash
+python gui.py                 # 或 Windows 双击 start-gui.bat
+```
+
+- 默认地址 `http://127.0.0.1:19123`,仅本机可访问(配置含 API 密钥,勿对局域网开放)
+- 保存后新调用立即生效;Codex 视觉代理(127.0.0.1:19100)需重启才加载新配置,界面内可直接「重启代理」
+- 白名单外站点可保存但调用时会被保险丝拒绝,界面会给出提示
 
 **多站点故障切换**:主站点重试耗尽后自动切换到备用站点,全部失败才报错。备用站点用 `VISION2_*` 配置(编号可继续后延 `VISION3_*` ...),字段齐全即生效:
 
@@ -111,6 +126,8 @@ VISION2_MODEL=agnes-2.5-flash
 
 ```
 kv-agent-vision/
+├── gui.py             # 配置中心(GUI,零依赖,管理共享配置)
+├── start-gui.bat      # Windows 一键启动 GUI
 ├── mcp_server.py      # MCP server(stdio,零依赖)—— 推荐形态
 ├── vision.py          # 核心脚本(描述/问答/OCR/多图,零依赖)
 ├── .env.example       # 配置模板(复制为 .env)
