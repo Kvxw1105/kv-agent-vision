@@ -4,9 +4,22 @@
 
 ## [Unreleased]
 
+### Changed(2026-08-11 · 第二次重构)
+
+- **配置中心重构为高密度科技终端**(QUANT TERMINAL / CYBER IDE 方向):
+  - 视觉母体:Ciber Operations Console(主)+ 机构终端数据密度(辅)
+  - Application Shell:顶栏 + Navigation Rail(NODES/OVERVIEW/LOG)+ Workspace + 底部 Status Bar
+  - 信号色系统(磷光绿/琥珀/信号红/冷青),碳黑分层背景,蓝紫渐变与 Glow 归零
+  - 节点数据表:NODE-01… 编号、MAIN/BACKUP 角色、PROBING→LIVE/DOWN 状态流转、
+    延迟 sparkline(真实测试历史)、最近探测记录
+  - Command Palette(Ctrl+K):模糊搜索 + 键盘导航,命令含 Technical Label
+  - 状态栏实时显示 PROXY/PID/NODES/LATENCY/SYNCED
+  - 图标全 SVG 线性风格(1.6px stroke),无 emoji;业务文案保持中文,技术标签作辅助
+  - Motion tokens(--motion-fast/normal/panel + easing)、prefers-reduced-motion 支持
+
 ### Added(2026-08-11)
 
-- **GUI 配置中心全面改版(眼科检查单主题)**:
+- **GUI 配置中心全面改版(第一版眼科检查单主题,已被终端主题取代)**:
   - 视觉命题:视力表头、检查记录卡、Ishihara 色盲检测空状态、红印章、明室/暗室双主题
   - 站点健康度按"视力等级"呈现(5.0 健康 / 3.0 失明),故障站点 E 字放大
   - 拖拽排序站点(替代 ↑↓ 按钮);密钥显示/隐藏切换
