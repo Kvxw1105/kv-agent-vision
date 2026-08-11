@@ -11,6 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cp -f "$SCRIPT_DIR/SKILL.md" \
       "$SCRIPT_DIR/PROMPT.md" \
       "$SCRIPT_DIR/vision.py" \
+      "$SCRIPT_DIR/gui.py" \
+      "$SCRIPT_DIR/start-gui.bat" \
       "$SCRIPT_DIR/.env.example" \
       "$SCRIPT_DIR/README.md" \
       "$SCRIPT_DIR/vision-test.png" \
@@ -24,3 +26,5 @@ echo "✔ agent-vision 已安装到: $DEST"
 echo ""
 echo "验证是否可用:"
 echo "  PYTHONIOENCODING=utf-8 python \"$DEST/vision.py\" \"$DEST/vision-test.png\" --simple"
+echo "配置中心(可选):"
+echo "  python \"$DEST/gui.py\"   # 或 Windows 双击 start-gui.bat"
