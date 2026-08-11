@@ -64,10 +64,6 @@ LANG_INSTRUCTIONS = {
     "en": "Please respond in English.",
 }
 
-# 保险丝：只允许用户配置的视觉 API，防止误用其他付费模型
-ALLOWED_BASE_URLS = ["nayutoai.xyz", "agnes-ai.com"]
-ALLOWED_MODELS = ["gpt-5.6-luna", "agnes"]
-
 
 class VisionError(RuntimeError):
     pass
@@ -177,11 +173,6 @@ def describe_image(image_url, prompt=None, max_tokens=16384, apply_lang=True):
         base_url = site["base_url"].rstrip("/")
         api_key = site["api_key"]
         model = site["model"]
-        # 保险丝：只允许配置好的视觉 API
-        if not any(allowed in base_url for allowed in ALLOWED_BASE_URLS):
-            raise VisionError(f"配置拒绝：VISION_BASE_URL 必须是已配置的 API（{' / '.join(ALLOWED_BASE_URLS)}），当前为 {base_url}")
-        if not any(allowed in model for allowed in ALLOWED_MODELS):
-            raise VisionError(f"配置拒绝：VISION_MODEL 必须是已配置的模型（{' / '.join(ALLOWED_MODELS)}），当前为 {model}")
         payload = {
             "model": model,
             "max_tokens": max_tokens,
@@ -200,7 +191,14 @@ def describe_image(image_url, prompt=None, max_tokens=16384, apply_lang=True):
         for attempt in range(5):
             try:
                 with opener.open(request, timeout=240) as resp:
-                    data = json.loads(resp.read().decode("utf-8", errors="replace"))
+                    body_text = resp.read().decode("utf-8", errors="replace")
+                try:
+                    data = json.loads(body_text)
+                except json.JSONDecodeError:
+                    # 站点返回了非 JSON 内容(如 HTML 拦截页),按站点故障处理:重试→切换
+                    last_err = VisionError(f"视觉 API 返回非 JSON 响应: {body_text[:200]}")
+                    time.sleep(3 * (attempt + 1))
+                    continue
                 content = data.get("choices", [{}])[0].get("message", {}).get("content") or ""
                 if content.strip():
                     if site_index:
