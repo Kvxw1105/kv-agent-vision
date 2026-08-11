@@ -58,11 +58,11 @@ PAGE = """<!DOCTYPE html>
   /* ============ Design Tokens ============ */
   :root {
     --bg-base: #0b0d10;
-    --bg-elev: #101319;
-    --surface: #14181f;
-    --surface-2: #191e26;
-    --surface-hover: #1d232c;
-    --surface-active: #232a35;
+    --bg-elev: rgba(16,19,25,.86);
+    --surface: rgba(20,24,31,.88);
+    --surface-2: rgba(25,30,38,.9);
+    --surface-hover: rgba(29,35,44,.92);
+    --surface-active: rgba(35,42,53,.95);
     --border-subtle: #20262f;
     --border-strong: #2e3642;
     --text-primary: #e8ebf0;
@@ -92,8 +92,9 @@ PAGE = """<!DOCTYPE html>
   }
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
-      --bg-base: #f4f6f9; --bg-elev: #ffffff; --surface: #ffffff; --surface-2: #eef1f5;
-      --surface-hover: #e9edf2; --surface-active: #dfe5ec;
+      --bg-base: #f4f6f9; --bg-elev: rgba(255,255,255,.86); --surface: rgba(255,255,255,.9);
+      --surface-2: rgba(238,241,245,.92); --surface-hover: rgba(233,237,242,.95);
+      --surface-active: rgba(223,229,236,.97);
       --border-subtle: #e2e7ee; --border-strong: #c4cdd8;
       --text-primary: #1a2029; --text-secondary: #525d6b; --text-tertiary: #8a94a3;
       --signal-positive: #128a4b; --signal-warning: #a8680f; --signal-critical: #d0342e;
@@ -103,8 +104,9 @@ PAGE = """<!DOCTYPE html>
     }
   }
   :root[data-theme="light"] {
-    --bg-base: #f4f6f9; --bg-elev: #ffffff; --surface: #ffffff; --surface-2: #eef1f5;
-    --surface-hover: #e9edf2; --surface-active: #dfe5ec;
+    --bg-base: #f4f6f9; --bg-elev: rgba(255,255,255,.86); --surface: rgba(255,255,255,.9);
+    --surface-2: rgba(238,241,245,.92); --surface-hover: rgba(233,237,242,.95);
+    --surface-active: rgba(223,229,236,.97);
     --border-subtle: #e2e7ee; --border-strong: #c4cdd8;
     --text-primary: #1a2029; --text-secondary: #525d6b; --text-tertiary: #8a94a3;
     --signal-positive: #128a4b; --signal-warning: #a8680f; --signal-critical: #d0342e;
@@ -139,9 +141,10 @@ PAGE = """<!DOCTYPE html>
   .hidden-file { display: none; }
 
   /* ============ App Shell ============ */
+  #bg3d { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
   .shell { display: grid; height: 100vh; grid-template-rows: var(--header-h) 1fr var(--status-h);
            grid-template-columns: var(--rail-w) 1fr; grid-template-areas:
-             "head head" "rail main" "status status"; }
+             "head head" "rail main" "status status"; position: relative; z-index: 1; }
   header { grid-area: head; display: flex; align-items: center; gap: 14px; padding: 0 16px;
            background: var(--bg-elev); border-bottom: 1px solid var(--border-subtle); }
   .brand { display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 600;
@@ -320,6 +323,7 @@ PAGE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
+<canvas id="bg3d" aria-hidden="true"></canvas>
 <div class="shell">
   <header>
     <div class="brand">
@@ -629,6 +633,12 @@ function renderNodes() {
     bindDrag();
   }
   $("siteCount").textContent = sites.length + " 节点";
+  /* 同步节点状态给 3D 背景层 */
+  window.__KV_3D = sites.map((s) => {
+    const st = nodeState(s.base_url, s.complete);
+    return { url: s.base_url, state: st.label };
+  });
+  if (window.__KV_3D_REBUILD) window.__KV_3D_REBUILD(window.__KV_3D);
   updateOverview();
 }
 
@@ -997,6 +1007,165 @@ tickClock();
 setInterval(tickClock, 1000);
 setInterval(() => { if (!document.hidden) loadConfig(); }, 10000);
 </script>
+<script type="module">
+/* ============ 3D 背景层:节点网络(Ambient Layer,可降级) ============ */
+let THREE;
+try { THREE = await import('/vendor/three.module.min.js'); }
+catch (e) { console.warn('[3d] three.js 不可用,跳过背景层:', e.message); }
+if (THREE) {
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const canvas = document.getElementById('bg3d');
+  const COLOR = {
+    LIVE: 0x37d67a, PROBING: 0xe8a33d, DOWN: 0xff5d5d,
+    UNTESTED: 0x6b7280, INVALID: 0x6b7280,
+    HUB: 0x54c8e0, EDGE: 0x2e3642, RING: 0x20262f, PACKET: 0x54c8e0,
+  };
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+
+  /* 确定性 seed(节点布局可复现) */
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* 中枢 */
+  const hub = new THREE.Mesh(
+    new THREE.SphereGeometry(0.17, 20, 20),
+    new THREE.MeshBasicMaterial({ color: COLOR.HUB, transparent: true, opacity: 0.9 })
+  );
+  scene.add(hub);
+
+  /* 极淡轨道环 */
+  const ring = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(
+      Array.from({ length: 96 }, (_, i) => {
+        const a = (i / 96) * Math.PI * 2;
+        return new THREE.Vector3(Math.cos(a) * 6.2, Math.sin(a) * 3.6, 0);
+      })),
+    new THREE.LineBasicMaterial({ color: COLOR.RING, transparent: true, opacity: 0.5 })
+  );
+  scene.add(ring);
+
+  const nodeGroup = new THREE.Group();
+  scene.add(nodeGroup);
+  let lineObj = null;
+  let packets = [];
+  const nodeObjs = [];   // { mesh, mat, pos, phase, birth }
+
+  function rebuild(sites) {
+    for (const o of nodeObjs) { o.mesh.geometry.dispose(); o.mat.dispose(); }
+    nodeObjs.length = 0;
+    for (const p of packets) { p.mesh.geometry.dispose(); p.mesh.material.dispose(); scene.remove(p.mesh); }
+    packets = [];
+    if (lineObj) { lineObj.geometry.dispose(); lineObj.material.dispose(); scene.remove(lineObj); lineObj = null; }
+    const rand = mulberry32(20260812);
+    const n = sites.length;
+    const pts = [new THREE.Vector3(0, 0, 0)];
+    sites.forEach((_, i) => {
+      const a = (i / Math.max(n, 1)) * Math.PI * 2 - Math.PI / 2;
+      const r = 4.2 + (rand() * 2 - 1) * 1.4;
+      const pos = new THREE.Vector3(
+        Math.cos(a) * r, Math.sin(a) * r * 0.62, (rand() * 2 - 1) * 1.3);
+      pts.push(pos);
+      const mat = new THREE.MeshBasicMaterial({
+        color: COLOR.UNTESTED, transparent: true, opacity: 0.85 });
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 14), mat);
+      mesh.position.copy(pos);
+      mesh.scale.setScalar(0.001);
+      nodeGroup.add(mesh);
+      nodeObjs.push({ mesh, mat, pos, phase: rand() * 6.28, birth: performance.now() / 1000 + i * 0.12 });
+      /* 数据包:每边 1 个 */
+      const pmat = new THREE.MeshBasicMaterial({
+        color: COLOR.PACKET, transparent: true, opacity: 0.75 });
+      const pm = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), pmat);
+      pm.visible = false;
+      scene.add(pm);
+      packets.push({ mesh: pm, from: new THREE.Vector3(0, 0, 0), to: pos, phase: rand(), speed: 0.1 + rand() * 0.08 });
+    });
+    /* 边:中枢 → 各节点(LineSegments 成对顶点) */
+    const seg = [];
+    sites.forEach((_, i) => { seg.push(new THREE.Vector3(0, 0, 0), pts[i + 1]); });
+    const lineGeo = new THREE.BufferGeometry().setFromPoints(seg);
+    lineObj = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({
+      color: COLOR.EDGE, transparent: true, opacity: 0.55 }));
+    scene.add(lineObj);
+  }
+
+  function stateColor(label) {
+    if (label === "LIVE") return COLOR.LIVE;
+    if (label === "PROBING") return COLOR.PROBING;
+    if (label === "DOWN") return COLOR.DOWN;
+    return COLOR.UNTESTED;
+  }
+
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  /* 相机:慢自转 + 鼠标视差(约束范围) */
+  let yaw = 0, pointer = { x: 0, y: 0 };
+  window.addEventListener("pointermove", (e) => {
+    pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+    pointer.y = (e.clientY / window.innerHeight) * 2 - 1;
+  });
+
+  const clock = new THREE.Clock();
+  const tmpColor = new THREE.Color();
+  function animate() {
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const t = clock.elapsedTime;
+    yaw += dt * 0.05;
+    const py = Math.max(-0.35, Math.min(0.35, pointer.x * 0.22));
+    const pp = Math.max(-0.2, Math.min(0.2, -pointer.y * 0.16));
+    const dist = 13.5;
+    camera.position.set(Math.sin(yaw + py) * dist, 1.6 + pp * 5, Math.cos(yaw + py) * dist);
+    camera.lookAt(0, 0, 0);
+
+    /* 节点:入场 + 呼吸 + 状态色 */
+    const states = window.__KV_3D || [];
+    for (let i = 0; i < nodeObjs.length; i++) {
+      const o = nodeObjs[i];
+      const target = Math.min(1, Math.max(0, (t - o.birth) / 0.6));
+      const s = target * (1 + Math.sin(t * 1.3 + o.phase) * 0.14);
+      o.mesh.scale.setScalar(Math.max(0.001, s));
+      const st = states[i] ? states[i].state : "UNTESTED";
+      tmpColor.setHex(stateColor(st));
+      o.mat.color.lerp(tmpColor, Math.min(1, dt * 4));
+      if (st === "PROBING") o.mat.opacity = 0.45 + 0.4 * Math.abs(Math.sin(t * 6));
+      else o.mat.opacity = 0.85;
+    }
+    /* 数据包沿边流动 */
+    for (const p of packets) {
+      p.phase = (p.phase + dt * p.speed) % 1;
+      const x = p.from.x + (p.to.x - p.from.x) * p.phase;
+      const y = p.from.y + (p.to.y - p.from.y) * p.phase;
+      const z = p.from.z + (p.to.z - p.from.z) * p.phase;
+      p.mesh.position.set(x, y, z);
+      p.mesh.visible = nodeObjs.length > 0;
+    }
+
+    renderer.render(scene, camera);
+    if (!reduceMotion && !document.hidden) requestAnimationFrame(animate);
+  }
+
+  /* 重建入口:renderNodes 之后由主脚本调用 */
+  window.__KV_3D_REBUILD = (sites) => rebuild(sites || []);
+  if (reduceMotion) { rebuild(window.__KV_3D || []); renderer.render(scene, camera); }
+  else requestAnimationFrame(animate);
+}
+</script>
 </body>
 </html>
 """
@@ -1315,6 +1484,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except OSError:
                     tail = "(读取日志失败)"
             self._send(200, {"log": tail})
+        elif parsed.path == "/vendor/three.module.min.js":
+            vendor = _shared_dir() / "three.module.min.js"
+            if vendor.is_file():
+                data = vendor.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/javascript; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self._send(404, {"error": "three.module.min.js not found"})
         else:
             self._send(404, {"error": "not found"})
 
