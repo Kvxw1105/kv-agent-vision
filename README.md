@@ -95,6 +95,16 @@ LANG=zh
 
 加载优先级:环境变量 `VISION_API_KEY/VISION_BASE_URL/VISION_MODEL/LANG` → 脚本同目录 `.env` → `--env-file` 指定文件。
 
+**多站点故障切换**:主站点重试耗尽后自动切换到备用站点,全部失败才报错。备用站点用 `VISION2_*` 配置(编号可继续后延 `VISION3_*` ...),字段齐全即生效:
+
+```ini
+VISION2_API_KEY=sk-xxx                          # 备用站点 API 密钥
+VISION2_BASE_URL=https://apihub.agnes-ai.com/v1
+VISION2_MODEL=agnes-2.5-flash
+```
+
+切换时向 stderr 打印 `[vision] 主站点失败，已切换到备用站点 ...` 便于诊断。
+
 > ⚠️ **保险丝**:脚本与 MCP server 均内置白名单,只允许 `nayutoai.xyz` / `agnes-ai.com` 域名与 `gpt-5.6-luna` / `agnes` 系列模型。换模型需同步修改 `.env` 与 `vision.py` 内 `ALLOWED_BASE_URLS` / `ALLOWED_MODELS`。
 
 ## 📁 目录结构
@@ -128,6 +138,7 @@ PYTHONIOENCODING=utf-8 python vision.py vision-test.png --simple
 | `配置拒绝:VISION_BASE_URL 必须是...` | 保险丝生效,该 API 不在白名单,不要绕过 |
 | 中文乱码(Windows) | 运行前设 `PYTHONIOENCODING=utf-8` |
 | SSL EOF / 5xx / 连接重置 | 视觉 API 偶发抖动,已内置 5 次自动重试,稍等重跑 |
+| 主站点持续连不上 | 自动切换到备用站点(配置了 `VISION2_*` 时),stderr 会打印切换提示 |
 | 返回空内容 | 推理模型需足够 `max_tokens`(默认 16384),不要调小 |
 | 网络错误(Windows 代理) | 强制直连绕过系统代理;仍失败请检查本地代理拦截 |
 
