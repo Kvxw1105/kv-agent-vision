@@ -108,6 +108,9 @@ python gui.py                 # 或 Windows 双击 start-gui.bat
 ```
 
 - 默认地址 `http://127.0.0.1:19123`,仅本机可访问(配置含 API 密钥,勿对局域网开放)
+- **3D 背景层(Three.js)**:节点网络拓扑——代理为中枢、站点为环绕节点,数据包沿边流动,
+  节点颜色随真实探测状态变化(LIVE 磷光绿 / PROBING 琥珀 / DOWN 红);Three.js 从本地
+  `three.module.min.js` 加载(离线可用),缺失时自动降级为纯终端 UI
 - **节点管理**:注册/编辑/注销、拖拽排序(第 1 个为主节点,其余自动成为故障切换备用)
 - **探测(测试)**:逐个或全部探测,状态流转 PROBING→LIVE/DOWN,延迟 sparkline 与最近探测记录真实可查
 - **Command Palette**:`Ctrl+K` 快速执行命令(添加/探测/保存/重启/导入导出/主题…)
