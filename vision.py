@@ -10,10 +10,11 @@
   python vision.py <图片> --ocr
   python vision.py <图片1> <图片2> ...   # 多图逐张描述（并发）
 
-配置加载顺序（从高到低）:
-  1. 环境变量 VISION_API_KEY / VISION_BASE_URL / VISION_MODEL / LANG
-  2. env 文件（可通过 --env-file 指定，或默认在脚本同目录 .env）
-  3. Windows: %LOCALAPPDATA%\\codex-deepseek-vision\\env（与 Codex 视觉代理共用）
+配置加载顺序（从高到低，所有 Agent 共用同一份共享配置）:
+  1. 显式指定: --env-file 参数或环境变量 CODEX_DEEPSEEK_VISION_ENV
+  2. 共享配置: %LOCALAPPDATA%\\codex-deepseek-vision\\env（Windows，与 Codex 视觉代理共用）/
+     ~/.config/codex-deepseek-vision/env（其它系统）
+  3. 本地兜底: 脚本同目录 .env、当前目录 .env
 """
 
 from __future__ import annotations
@@ -88,16 +89,23 @@ def load_env_file(path):
 
 
 def load_default_env(args_env=None):
-    candidates = []
-    if args_env:
-        candidates.append(Path(args_env).expanduser())
-    candidates.extend([
-        Path(__file__).resolve().parent / ".env",
-        Path.cwd() / ".env",
-    ])
+    """按优先级加载共享配置(所有装配了本能力的 Agent 共用同一份):
+
+    1. 显式指定:--env-file 参数或环境变量 CODEX_DEEPSEEK_VISION_ENV
+    2. 共享配置:Windows %LOCALAPPDATA%\\codex-deepseek-vision\\env,
+       其它系统 ~/.config/codex-deepseek-vision/env
+    3. 本地兜底:脚本同目录 .env、当前目录 .env(仅当前副本覆盖用)
+    """
+    explicit = args_env or os.environ.get("CODEX_DEEPSEEK_VISION_ENV")
+    candidates = [Path(explicit).expanduser()] if explicit else []
     local_appdata = os.environ.get("LOCALAPPDATA")
     if local_appdata:
         candidates.append(Path(local_appdata) / "codex-deepseek-vision" / "env")
+    candidates.extend([
+        Path.home() / ".config" / "codex-deepseek-vision" / "env",
+        Path(__file__).resolve().parent / ".env",
+        Path.cwd() / ".env",
+    ])
     for path in candidates:
         load_env_file(path)
 
