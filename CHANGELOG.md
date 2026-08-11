@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### Added(2026-08-12)
+
+- **Three.js 3D 背景层**(节点网络拓扑,Ambient Layer):
+  - 代理为中枢、站点为环绕节点,数据包沿边流动(相位循环、确定性 seed 布局)
+  - 节点颜色随真实探测状态变化:LIVE 磷光绿 / PROBING 琥珀闪烁 / DOWN 信号红
+  - 相机慢自转 + 鼠标视差(约束范围);`prefers-reduced-motion` 下单帧静态
+  - Three.js 0.160 本地加载(`three.module.min.js` 由 `/vendor/` 路由提供,离线可用),
+    缺失时自动降级为纯终端 UI;页面隐藏时暂停渲染
+  - 面板改为半透明 Surface,3D 层透出但不干扰可读性
+
 ### Changed(2026-08-11 · 第二次重构)
 
 - **配置中心重构为高密度科技终端**(QUANT TERMINAL / CYBER IDE 方向):
