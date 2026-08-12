@@ -25,6 +25,7 @@ import json
 import mimetypes
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -1683,6 +1684,17 @@ def _test_image_url():
 _TEST_IMAGE = _test_image_url()
 
 
+def _port_in_use(host, port):
+    """探测端口是否已被监听(Windows 的 SO_REUSEADDR 允许双绑,必须先探测)。"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.3)
+        try:
+            s.connect((host, port))
+            return True
+        except OSError:
+            return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="kv-agent-vision 配置中心(GUI)")
     parser.add_argument("--host", default="127.0.0.1")
@@ -1697,7 +1709,20 @@ def main():
     if args.host not in ("127.0.0.1", "localhost", "::1"):
         print(f"警告: 监听 {args.host},配置含 API 密钥,不建议对局域网开放", file=sys.stderr)
 
-    server = http.server.ThreadingHTTPServer((args.host, args.port), Handler)
+    # 端口自动后延:默认 19123 被占用时尝试后续端口(最多 20 个),以实际绑定为准。
+    # Windows 的 SO_REUSEADDR 允许双绑,必须先用 _port_in_use 探测,不能依赖绑定报错。
+    server = None
+    for port in range(args.port, args.port + 21):
+        if _port_in_use(args.host, port):
+            continue
+        try:
+            server = http.server.ThreadingHTTPServer((args.host, port), Handler)
+            break
+        except OSError:
+            continue
+    if server is None:
+        print(f"错误: 端口 {args.port}-{args.port + 20} 均被占用,请用 --port 指定其他端口", file=sys.stderr)
+        sys.exit(1)
     server.store = store  # type: ignore[attr-defined]
     actual = server.server_address[1]
 
