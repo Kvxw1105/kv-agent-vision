@@ -205,6 +205,14 @@ PAGE = """<!DOCTYPE html>
   .dot.on { background: var(--signal-positive); animation: breathe 2.2s ease infinite; }
   .dot.probing { background: var(--signal-warning); animation: blink .5s steps(2) infinite; }
   .dot.down { background: var(--signal-critical); }
+  .dot.pending { background: var(--signal-info); }
+  .status-chip.pending { color: var(--signal-info); border-color: var(--signal-info); }
+  /* 待配置密钥横幅 */
+  .banner-warn { border: 1px solid var(--signal-warning); background: var(--warning-soft);
+                 color: var(--signal-warning); padding: 8px 14px; border-radius: 4px;
+                 margin-bottom: 12px; font-size: 12.5px; font-family: var(--font-mono);
+                 letter-spacing: .3px; display: flex; align-items: center; gap: 8px; }
+  .banner-warn b { font-weight: 600; }
   @keyframes breathe { 0%,100% { box-shadow: 0 0 0 0 var(--positive-soft); }
                        55% { box-shadow: 0 0 0 5px rgba(55,214,122,0); } }
   @keyframes blink { 50% { opacity: .25; } }
@@ -377,9 +385,13 @@ PAGE = """<!DOCTYPE html>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 014-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 01-4 4H3"/></svg>
           重启代理
         </button>
-        <button id="btnExport">
+        <button id="btnExport" title="导出完整配置(含密钥,仅本地备份用)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3m0 0L8 7m4-4l4 4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
           导出
+        </button>
+        <button id="btnExportRedacted" title="导出不含密钥的配置包,发给其他电脑自动装配">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7"/><path d="M16 6l-4-4-4 4m4-4v11"/></svg>
+          分发导出
         </button>
         <button id="btnImport">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l4-4m-4 4l-4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
@@ -389,6 +401,8 @@ PAGE = """<!DOCTYPE html>
         <span style="flex:1"></span>
         <span id="testProgress" class="label" style="display:none"></span>
       </div>
+
+      <div id="keyBanner" class="banner-warn" style="display:none"></div>
 
       <div class="section-head">
         <span class="label">NODE REGISTRY</span>
@@ -550,9 +564,10 @@ function saveResult(baseUrl, ok, latency) {
   r[baseUrl] = hist;
   try { localStorage.setItem(RESULTS_KEY, JSON.stringify(r)); } catch (e) {}
 }
-function nodeState(baseUrl, complete) {
-  if (!complete) return { label: "INVALID", cls: "", dot: "off" };
-  const r = loadResults()[baseUrl];
+function nodeState(s) {
+  if (!s.base_url || !s.model) return { label: "INVALID", cls: "", dot: "off", pending: false };
+  if (!s.has_key) return { label: "KEY PENDING", cls: "", dot: "pending", pending: true };
+  const r = loadResults()[s.base_url];
   if (!r || r.ok === null) return { label: "UNTESTED", cls: "", dot: "off", latency: null, history: [] };
   if (r.ok) return { label: "LIVE", cls: "live", dot: "on", latency: r.latency, history: r.history || [] };
   return { label: "DOWN", cls: "down", dot: "down", latency: r.latency, history: r.history || [] };
@@ -586,7 +601,7 @@ function renderNodes() {
       </div>`;
   } else {
     box.innerHTML = sites.map((s, i) => {
-      const st = nodeState(s.base_url, s.complete);
+      const st = nodeState(s);
       const role = i === 0 ? '<span class="role-tag main">MAIN</span>'
                            : '<span class="role-tag">BACKUP</span>';
       const inc = s.complete ? "" : '<span class="role-tag">INVALID</span>';
@@ -602,7 +617,7 @@ function renderNodes() {
             ${sparkHtml(st.history)}
             <span class="mono" style="font-size:11px;color:var(--text-secondary);min-width:52px;text-align:right">
               ${st.latency !== null ? st.latency + "ms" : "—"}</span>
-            <span class="status-chip ${st.cls}">${st.label}</span>
+            <span class="status-chip ${st.cls}${st.pending ? " pending" : ""}">${st.label}</span>
           </span>
           <span class="node-ops">
             <button onclick="testSite(${i})">探测</button>
@@ -634,11 +649,9 @@ function renderNodes() {
   }
   $("siteCount").textContent = sites.length + " 节点";
   /* 同步节点状态给 3D 背景层 */
-  window.__KV_3D = sites.map((s) => {
-    const st = nodeState(s.base_url, s.complete);
-    return { url: s.base_url, state: st.label };
-  });
+  window.__KV_3D = sites.map((s) => ({ url: s.base_url, state: nodeState(s).label }));
   if (window.__KV_3D_REBUILD) window.__KV_3D_REBUILD(window.__KV_3D);
+  updateBanner();
   updateOverview();
 }
 
@@ -753,6 +766,18 @@ async function loadConfig() {
 
 function markDirty() { dirty = true; $("dirtyTag").style.display = ""; }
 
+/* 待配置密钥横幅:来自其他机器的脱敏配置包导入后,提醒在本机录入密钥 */
+function updateBanner() {
+  const n = sites.filter((s) => s.base_url && s.model && !s.has_key).length;
+  const el = $("keyBanner");
+  if (n) {
+    el.style.display = "";
+    el.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 11-7.8 7.8 5.5 5.5 0 017.8-7.8zm0 0L15.5 7.5m3 3L21 8l-3-3-2.5 2.5"/></svg>
+      <span><b>KEY PENDING</b> · ${n} 个节点来自分发的配置包,等待在本机录入 API 密钥 —
+      点击节点「编辑」填入密钥后「保存」即生效。</span>`;
+  } else el.style.display = "none";
+}
+
 /* ---------- 保存 ---------- */
 async function save() {
   const btn = $("btnSave");
@@ -772,7 +797,10 @@ async function save() {
 
 /* ---------- 探测 ---------- */
 async function testSite(i) {
-  const st = nodeState(sites[i].base_url, sites[i].complete);
+  const s = sites[i];
+  if (!s.base_url || !s.model) { toast("节点信息不完整,请先编辑", "warn"); return; }
+  if (!s.has_key) { toast("该节点 API 密钥未配置 — 点击「编辑」录入后保存", "warn", 4000); return; }
+  const st = nodeState(s);
   const chips = document.querySelectorAll(`.node-row[data-i="${i}"] .status-chip`);
   const errBox = $("err-" + i);
   errBox.classList.remove("show");
@@ -869,7 +897,22 @@ async function exportConfig() {
     a.download = "kv-agent-vision-config-" + new Date().toISOString().slice(0, 10) + ".json";
     a.click();
     URL.revokeObjectURL(url);
-    toast("配置已导出", "ok", 2500);
+    toast("已导出完整配置(含密钥,勿外发)", "ok", 3000);
+  } catch (e) { toast("导出失败: " + e.message, "err"); }
+}
+
+/* 分发导出:不含密钥,可安全发给其他电脑 */
+async function exportConfigRedacted() {
+  try {
+    const r = await api("GET", "/api/export?mode=redact");
+    const blob = new Blob([JSON.stringify(r, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "kv-agent-vision-config-redacted-" + new Date().toISOString().slice(0, 10) + ".json";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("已导出脱敏配置包(不含密钥,可分发)", "ok", 3000);
   } catch (e) { toast("导出失败: " + e.message, "err"); }
 }
 $("btnImport").onclick = () => $("importFile").click();
@@ -882,7 +925,8 @@ $("importFile").onchange = async (e) => {
     const r = await api("POST", "/api/import", data);
     markDirty();
     renderNodes();
-    toast("已导入 " + r.count + " 节点 · 记得保存", "ok", 3500);
+    const pending = r.missing_keys ? ` · ${r.missing_keys} 个节点待配置密钥` : "";
+    toast(`已导入 ${r.count} 节点${pending} · 记得保存`, "ok", 4500);
   } catch (err) { toast("导入失败: " + err.message, "err", 5000); }
 };
 
@@ -917,6 +961,7 @@ function buildCommands(q) {
     { label: "保存配置", hint: "SAVE", run: save },
     { label: "重启代理", hint: "RESTART", run: restartProxy },
     { label: "导出配置", hint: "EXPORT", run: exportConfig },
+    { label: "分发导出(脱敏)", hint: "SHARE", run: exportConfigRedacted },
     { label: "导入配置", hint: "IMPORT", run: () => $("importFile").click() },
     { label: "查看日志", hint: "LOG", run: () => switchTab("log") },
     { label: "切换主题", hint: "THEME", run: cycleTheme },
@@ -996,6 +1041,7 @@ $("btnSave").onclick = save;
 $("btnTestAll").onclick = testAll;
 $("btnRestartProxy").onclick = restartProxy;
 $("btnExport").onclick = exportConfig;
+$("btnExportRedacted").onclick = exportConfigRedacted;
 $("btnTheme").onclick = cycleTheme;
 $("btnLogRefresh").onclick = loadLog;
 document.querySelectorAll(".nav-item").forEach((n) =>
@@ -1016,7 +1062,7 @@ if (THREE) {
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const canvas = document.getElementById('bg3d');
   const COLOR = {
-    LIVE: 0x37d67a, PROBING: 0xe8a33d, DOWN: 0xff5d5d,
+    LIVE: 0x37d67a, PROBING: 0xe8a33d, DOWN: 0xff5d5d, PENDING: 0x54c8e0,
     UNTESTED: 0x6b7280, INVALID: 0x6b7280,
     HUB: 0x54c8e0, EDGE: 0x2e3642, RING: 0x20262f, PACKET: 0x54c8e0,
   };
@@ -1102,6 +1148,7 @@ if (THREE) {
     if (label === "LIVE") return COLOR.LIVE;
     if (label === "PROBING") return COLOR.PROBING;
     if (label === "DOWN") return COLOR.DOWN;
+    if (label === "KEY PENDING") return COLOR.PENDING;
     return COLOR.UNTESTED;
   }
 
@@ -1307,15 +1354,24 @@ class ConfigStore:
     def public_sites(self):
         result = []
         for site in self.sites:
-            complete = all(site[k] for k in ("base_url", "api_key", "model"))
+            has_base_model = bool(site["base_url"]) and bool(site["model"])
+            has_key = bool(site["api_key"])
+            complete = has_base_model and has_key
+            issues = []
+            if not complete:
+                if has_base_model and not has_key:
+                    issues = ["API 密钥未配置,请在本机录入"]
+                else:
+                    issues = ["Base URL 或模型未填写,该站点不会生效"]
             result.append({
                 "base_url": site["base_url"],
                 "model": site["model"],
                 "api_key": bool(site["api_key"]),
                 "api_key_value": site["api_key"],
                 "api_key_masked": self._mask_key(site["api_key"]),
+                "has_key": has_key,
                 "complete": complete,
-                "issues": [] if complete else ["字段不完整,该站点不会生效"],
+                "issues": issues,
             })
         return result
 
@@ -1466,12 +1522,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(200, cfg)
         elif parsed.path == "/api/export":
             store = self._store()
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            redact = query.get("mode", [""])[0] == "redact"
             with _STATE_LOCK:
                 payload = {
                     "version": 2,
                     "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                     "lang": store.lang,
-                    "sites": [dict(site) for site in store.sites],
+                    "redacted": redact,
+                    "sites": [{
+                        "base_url": site["base_url"],
+                        "model": site["model"],
+                        "api_key": "" if redact else site["api_key"],
+                    } for site in store.sites],
                 }
             self._send(200, payload)
         elif parsed.path == "/api/proxy-log":
@@ -1532,19 +1595,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if not isinstance(raw_sites, list):
                         raise ValueError("导入数据缺少 sites 列表")
                     new_sites = []
+                    missing = 0
                     for item in raw_sites:
                         if not isinstance(item, dict):
                             raise ValueError("站点格式不正确")
                         base_url = (item.get("base_url") or "").strip()
                         model = (item.get("model") or "").strip()
                         api_key = (item.get("api_key") or "").strip()
-                        if not base_url or not model or not api_key:
-                            raise ValueError("站点缺少 base_url / model / api_key")
+                        if not base_url or not model:
+                            raise ValueError("站点缺少 base_url / model")
+                        if not api_key:
+                            missing += 1
                         new_sites.append({"base_url": base_url, "api_key": api_key, "model": model})
                     store.sites = new_sites
                     if body.get("lang"):
                         store.lang = str(body["lang"]).strip()[:16]
-                self._send(200, {"ok": True, "count": len(new_sites)})
+                self._send(200, {"ok": True, "count": len(new_sites), "missing_keys": missing})
             elif parsed.path == "/api/test":
                 index = int(body.get("index", 0))
                 with _STATE_LOCK:
