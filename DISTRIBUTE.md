@@ -96,6 +96,20 @@
 2. 期望:返回中文描述,能识别出 "Agent Vision Test" / "Hello 2026" / "Agent Ready"。
 3. 报告验证结果。
 
+## 步骤 7 · 创建桌面快捷方式(收尾,让用户以后能一键打开配置中心)
+1. Windows(推荐,参照来源机器标准做法):
+   用 PowerShell 在用户桌面创建「视觉配置中心」快捷方式:
+   - TargetPath = `py.exe`(或 python 可执行文件完整路径)
+   - Arguments = `-3 "<技能目录>/gui.py"`(使用步骤 0 记录的实际路径)
+   - WorkingDirectory = 技能目录;WindowStyle = 7(最小化运行)
+   - 示例:
+     `$s = (New-Object -ComObject WScript.Shell).CreateShortcut("$env:USERPROFILE\Desktop\视觉配置中心.lnk"); $s.TargetPath = "py.exe"; $s.Arguments = '-3 "C:\...\gui.py"'; $s.WorkingDirectory = "C:\..."; $s.WindowStyle = 7; $s.Save()`
+2. macOS / Linux:
+   - 创建 `~/Desktop/视觉配置中心.desktop`(Exec=`python3 <技能目录>/gui.py`,Terminal=false),
+     执行 `chmod +x` 并 `gio set` 信任;或若无桌面环境,在用户主目录放一个
+     启动脚本 `start-gui.sh` 并说明用法。
+3. 验证:快捷方式文件存在;告知用户双击即可打开配置中心。
+
 ## 完成标准(全部满足才算完成,输出装配报告)
 - [ ] 配置中心运行中(实际端口已记录)
 - [ ] 配置包已导入,节点数与来源机器一致
@@ -103,6 +117,7 @@
 - [ ] 视觉代理运行中(实际 proxy_port 已记录)
 - [ ] 全部节点探测 LIVE
 - [ ] vision.py / MCP 成功描述测试图(识别三行文字)
+- [ ] 桌面快捷方式已创建(环境支持桌面时)
 
 ## 安全与纪律
 - 绝不把真实 API 密钥写入日志、截图、聊天以外的不必要位置;推荐用户用 GUI 录入。
