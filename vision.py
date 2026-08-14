@@ -59,6 +59,19 @@ QUESTION_PROMPT = """请对这张图片进行专业、细致的视觉分析。�
 要求:位置信息尽量具体(九宫格区域+相对关系);看不清就说明,不编造。请使用简体中文。
 
 用户的针对性问题(重点详细回答):{question}"""
+
+# 坐标增强(可选):为定位/点击/裁切任务提供可计算的百分比坐标
+COORDS_HINT = """
+
+【坐标标注(已开启)】对每个重要对象、文字与 UI 元素,在描述中附上百分比坐标:
+以图片左上角为原点、图片宽高为 100%,格式 (x%, y%, w%, h%),如"主按钮 (62%, 84%, 24%, 7%)"。
+坐标供下游 Agent 定位、点击、裁切使用,请尽量精确;不确定时用"约"标注。"""
+
+# 色彩增强(可选):为设计复刻/取色任务提供精确色值
+COLORS_HINT = """
+
+【色值标注(已开启)】对每个对象给出精确颜色 HEX 值(如 #2563EB),覆盖背景、文字、
+边框与主色调;近似色给估算 HEX 并标注"约"。"""
 LANG_INSTRUCTIONS = {
     "zh": "请使用简体中文回答。",
     "en": "Please respond in English.",
@@ -228,12 +241,19 @@ def describe_image(image_url, prompt=None, max_tokens=16384, apply_lang=True):
 
 def build_prompt(args):
     if args.ocr:
-        return "请提取这张图片中的全部文字内容，按阅读顺序输出，并为每条文字标注其在图片中的位置区域(如左上角/顶部居中/右下角等)。只输出提取到的文字和位置，不要额外解释。"
-    if args.question:
-        return QUESTION_PROMPT.format(question=args.question)
-    if args.simple:
-        return DEFAULT_PROMPT
-    return DETAILED_PROMPT
+        base = "请提取这张图片中的全部文字内容，按阅读顺序输出，并为每条文字标注其在图片中的位置区域(如左上角/顶部居中/右下角等)。只输出提取到的文字和位置，不要额外解释。"
+    elif args.question:
+        base = QUESTION_PROMPT.format(question=args.question)
+    elif args.simple:
+        base = DEFAULT_PROMPT
+    else:
+        base = DETAILED_PROMPT
+    # 可选增强:坐标(定位/点击/裁切)与色值(设计复刻),默认关闭以控制上下文占比
+    if getattr(args, "coords", False):
+        base += COORDS_HINT
+    if getattr(args, "colors", False):
+        base += COLORS_HINT
+    return base
 
 
 def main():
@@ -242,6 +262,8 @@ def main():
     parser.add_argument("-q", "--question", default="", help="针对图片的提问")
     parser.add_argument("--ocr", action="store_true", help="OCR 模式：提取图片文字(带位置标注)")
     parser.add_argument("--simple", action="store_true", help="简短描述模式(仅基础描述，不启用深度结构化描述)")
+    parser.add_argument("--coords", action="store_true", help="坐标增强:对象/文字/UI 附加百分比坐标 (x%,y%,w%,h%),供定位/点击/裁切")
+    parser.add_argument("--colors", action="store_true", help="色彩增强:对象颜色附加精确 HEX 色值,供设计复刻/取色")
     parser.add_argument("--lang", default="", help="输出语言 zh/en，覆盖 env 的 LANG")
     parser.add_argument("--max-tokens", type=int, default=16384)
     parser.add_argument("--env-file", default="", help="指定 env 配置文件路径")
