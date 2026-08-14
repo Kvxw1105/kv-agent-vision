@@ -58,6 +58,14 @@ DESCRIBE_TOOL = {
                 "type": "boolean",
                 "description": "可选:true 时只返回简短概览,不做深度结构化分析",
             },
+            "coords": {
+                "type": "boolean",
+                "description": "可选:true 时对象/文字/UI 附加百分比坐标 (x%,y%,w%,h%),供定位/点击/裁切(会增加输出长度)",
+            },
+            "colors": {
+                "type": "boolean",
+                "description": "可选:true 时对象颜色附加精确 HEX 色值,供设计复刻/取色(会增加输出长度)",
+            },
         },
         "required": ["image"],
     },
@@ -81,6 +89,8 @@ def _call_describe_image(args):
         ocr=bool(args.get("ocr", False)),
         question=(args.get("question") or "").strip(),
         simple=bool(args.get("simple", False)),
+        coords=bool(args.get("coords", False)),
+        colors=bool(args.get("colors", False)),
     )
     prompt = vision.build_prompt(ns)
     if image.startswith(("data:", "http://", "https://")):
