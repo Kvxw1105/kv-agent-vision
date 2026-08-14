@@ -1027,11 +1027,15 @@ $("btnTestImage").onclick = async () => {
   try {
     const r = await api("POST", "/api/test-image", { index, image: img });
     if (r.ok) {
-      result.textContent = "✓ LIVE · " + r.latency_ms + "ms\n\n" + (r.preview || "");
+      result.textContent = `✓ LIVE · ${r.latency_ms}ms
+
+${r.preview || ""}`;
       result.style.color = "var(--signal-positive)";
       toast("NODE-" + String(index + 1).padStart(2, "0") + " LIVE · " + r.latency_ms + "ms", "ok", 3000);
     } else {
-      result.textContent = "✗ DOWN · " + r.latency_ms + "ms\n\n" + (r.error || "");
+      result.textContent = `✗ DOWN · ${r.latency_ms}ms
+
+${r.error || ""}`;
       result.style.color = "var(--signal-critical)";
       toast("NODE-" + String(index + 1).padStart(2, "0") + " DOWN", "err", 6000);
     }
