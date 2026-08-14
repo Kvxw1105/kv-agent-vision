@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### Added(2026-08-12 · 描述增强档)
+
+- **坐标增强 `--coords`**(vision.py CLI + MCP `coords` 参数):对象/文字/UI 附加
+  百分比坐标 `(x%,y%,w%,h%)`,供定位/点击/裁切(UI 自动化)
+- **色彩增强 `--colors`**(vision.py CLI + MCP `colors` 参数):对象颜色附加精确
+  HEX 色值,供设计复刻/取色
+- 默认关闭,按任务开启以控制上下文占比(全开约 +40% 输出)
+
 ### Added(2026-08-12 · 配置分发)
 
 - **配置/凭据分离(分发导出)**:`/api/export?mode=redact` 生成不含密钥的配置包,
