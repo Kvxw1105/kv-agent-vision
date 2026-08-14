@@ -43,6 +43,12 @@ python "<SKILL目录>/vision.py" <图片路径> --simple
 # 多图并发描述
 python "<SKILL目录>/vision.py" <图1> <图2> <图3>
 
+# 坐标增强(定位/点击/裁切用,输出加百分比坐标,默认关闭)
+python "<SKILL目录>/vision.py" <图片路径> --coords
+
+# 色彩增强(设计复刻/取色用,输出加精确 HEX 色值,默认关闭)
+python "<SKILL目录>/vision.py" <图片路径> --colors
+
 # 指定 env 配置文件（可选）
 python "<SKILL目录>/vision.py" <图片路径> --env-file /path/to/env
 ```
