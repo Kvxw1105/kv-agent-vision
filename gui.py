@@ -364,6 +364,11 @@ PAGE = """<!DOCTYPE html>
            stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
       LOG
     </div>
+    <div class="nav-item" data-tab="test" title="上传图片/截图实测端点">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+           stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="M21 15l-5-5L5 21"/></svg>
+      TEST
+    </div>
   </nav>
 
   <main id="workspace">
@@ -470,6 +475,27 @@ PAGE = """<!DOCTYPE html>
         </button>
       </div>
       <div id="logView" class="log-view"><span class="log-empty">加载中...</span></div>
+    </div>
+
+    <!-- TEST:上传图片/截图实测端点 -->
+    <div class="pane" id="pane-test">
+      <div class="section-head"><span class="label">ENDPOINT TEST · 端点实测</span><span class="spacer"></span></div>
+      <div class="panel">
+        <div class="detail-grid">
+          <div class="detail-field"><label>目标节点</label>
+            <select id="testNodeSel" style="width:100%;background:var(--surface);color:var(--text-primary);border:1px solid var(--border-strong);padding:6px 9px;border-radius:3px;font:12.5px var(--font-mono)"></select></div>
+          <div class="detail-field"><label>图片 / 截图(选择本地文件)</label>
+            <input type="file" id="testImgFile" accept="image/*" style="width:100%"></div>
+        </div>
+        <div class="detail-ops" style="align-items:center">
+          <button class="primary" id="btnTestImage">测试此端点</button>
+          <span class="hint" id="testImgInfo"></span>
+          <span style="flex:1"></span>
+          <span class="hint">用真实图片验证端点是否支持多模态输入</span>
+        </div>
+        <img id="testImgPreview" alt="预览" style="max-width:100%;max-height:220px;border:1px solid var(--border-subtle);border-radius:4px;display:none;margin-top:10px">
+        <div id="testImgResult" class="log-view" style="margin-top:12px;min-height:80px;display:none"></div>
+      </div>
     </div>
   </main>
 
@@ -586,6 +612,7 @@ function sparkHtml(history) {
 
 /* ---------- 渲染:节点 ---------- */
 function renderNodes() {
+  const editState = captureEditState();
   const box = $("nodes");
   if (!sites.length) {
     box.innerHTML = `
@@ -652,8 +679,49 @@ function renderNodes() {
   /* 同步节点状态给 3D 背景层 */
   window.__KV_3D = sites.map((s) => ({ url: s.base_url, state: nodeState(s).label }));
   if (window.__KV_3D_REBUILD) window.__KV_3D_REBUILD(window.__KV_3D);
+  populateTestSelect();
+  restoreEditState(editState);
   updateBanner();
   updateOverview();
+}
+
+/* TEST tab:节点下拉 */
+function populateTestSelect() {
+  const sel = $("testNodeSel");
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = sites.map((s, i) =>
+    `<option value="${i}">NODE-${String(i + 1).padStart(2, "0")} · ${escapeHtml(s.base_url)}</option>`).join("");
+  if (cur && sel.querySelector(`option[value="${cur}"]`)) sel.value = cur;
+}
+
+/* 编辑面板状态保留:重渲染(探测/刷新/增删)不覆盖用户正在编辑的输入框 */
+function captureEditState() {
+  const state = {};
+  document.querySelectorAll(".node-detail.open").forEach((d) => {
+    const m = d.id.match(/^detail-(\d+)$/);
+    if (!m) return;
+    const i = m[1];
+    state[i] = {
+      base: $("e" + i + "Base") ? $("e" + i + "Base").value : "",
+      model: $("e" + i + "Model") ? $("e" + i + "Model").value : "",
+      key: $("e" + i + "Key") ? $("e" + i + "Key").value : "",
+    };
+  });
+  return state;
+}
+function restoreEditState(state) {
+  Object.entries(state).forEach(([i, v]) => {
+    const d = $("detail-" + i);
+    if (d) d.classList.add("open");
+    if ($("e" + i + "Base")) $("e" + i + "Base").value = v.base;
+    if ($("e" + i + "Model")) $("e" + i + "Model").value = v.model;
+    if ($("e" + i + "Key")) $("e" + i + "Key").value = v.key;
+  });
+}
+function isEditing() {
+  const ae = document.activeElement;
+  return !!ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA");
 }
 
 function toggleDetail(i) {
@@ -676,6 +744,8 @@ function bindDrag() {
   let from = null;
   document.querySelectorAll(".node-row[draggable]").forEach((card) => {
     card.addEventListener("dragstart", (e) => {
+      // 输入框内拖选文本不应触发卡片拖拽
+      if (e.target.closest("input, textarea, select")) { e.preventDefault(); return; }
       from = parseInt(card.dataset.i, 10);
       card.classList.add("dragging");
       e.dataTransfer.effectAllowed = "move";
@@ -931,6 +1001,47 @@ $("importFile").onchange = async (e) => {
   } catch (err) { toast("导入失败: " + err.message, "err", 5000); }
 };
 
+/* ---------- TEST tab:上传图片实测端点 ---------- */
+$("testImgFile").onchange = (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    window.__testImage = reader.result;
+    const img = $("testImgPreview");
+    img.src = reader.result;
+    img.style.display = "";
+    $("testImgInfo").textContent = f.name + " · " + Math.round(f.size / 1024) + " KB";
+  };
+  reader.readAsDataURL(f);
+};
+$("btnTestImage").onclick = async () => {
+  const index = parseInt($("testNodeSel").value, 10);
+  const img = window.__testImage;
+  const result = $("testImgResult");
+  if (!img) { toast("请先选择图片/截图", "warn"); return; }
+  const btn = $("btnTestImage");
+  btn.disabled = true;
+  result.style.display = "";
+  result.textContent = "PROBING " + (sites[index] ? sites[index].base_url : "") + " ...";
+  try {
+    const r = await api("POST", "/api/test-image", { index, image: img });
+    if (r.ok) {
+      result.textContent = "✓ LIVE · " + r.latency_ms + "ms\n\n" + (r.preview || "");
+      result.style.color = "var(--signal-positive)";
+      toast("NODE-" + String(index + 1).padStart(2, "0") + " LIVE · " + r.latency_ms + "ms", "ok", 3000);
+    } else {
+      result.textContent = "✗ DOWN · " + r.latency_ms + "ms\n\n" + (r.error || "");
+      result.style.color = "var(--signal-critical)";
+      toast("NODE-" + String(index + 1).padStart(2, "0") + " DOWN", "err", 6000);
+    }
+  } catch (err) {
+    result.textContent = "请求失败: " + err.message;
+    result.style.color = "var(--signal-critical)";
+  }
+  btn.disabled = false;
+};
+
 /* ---------- 日志 ---------- */
 async function loadLog() {
   const box = $("logView");
@@ -1052,7 +1163,8 @@ applyTheme(localStorage.getItem(THEME_KEY) || "auto");
 loadConfig();
 tickClock();
 setInterval(tickClock, 1000);
-setInterval(() => { if (!document.hidden) loadConfig(); }, 10000);
+/* 定时刷新:用户正在编辑输入框时跳过,避免覆盖未保存的输入 */
+setInterval(() => { if (!document.hidden && !isEditing()) loadConfig(); }, 10000);
 </script>
 <script type="module">
 /* ============ 3D 背景层:节点网络(Ambient Layer,可降级) ============ */
@@ -1385,7 +1497,8 @@ class ConfigStore:
         return key[:4] + "..." + key[-4:]
 
 
-def test_site(store, index):
+def test_site(store, index, image_url=None):
+    """探测站点:用指定图片(默认内置测试图)发一条真实视觉请求。"""
     site = store.sites[index]
     if not site["api_key"]:
         return {"ok": False, "latency_ms": 0, "error": "该站点未配置 API 密钥"}
@@ -1399,9 +1512,9 @@ def test_site(store, index):
         start = time.time()
         try:
             result = vision.describe_image(
-                _TEST_IMAGE, prompt="请用一句话简单描述这张图片。", max_tokens=256)
+                image_url or _TEST_IMAGE, prompt="请用一句话简单描述这张图片。", max_tokens=512)
             return {"ok": True, "latency_ms": int((time.time() - start) * 1000),
-                    "preview": result[:120]}
+                    "preview": result[:200]}
         except vision.VisionError as exc:
             return {"ok": False, "latency_ms": int((time.time() - start) * 1000),
                     "error": str(exc)}
@@ -1618,6 +1731,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if index < 0 or index >= len(store.sites):
                         raise ValueError("站点序号无效")
                     result = test_site(store, index)
+                self._send(200, result)
+            elif parsed.path == "/api/test-image":
+                index = int(body.get("index", 0))
+                image = (body.get("image") or "").strip()
+                if not image.startswith(("data:", "http://", "https://")):
+                    raise ValueError("image 必须是 data URL 或 http(s) URL")
+                with _STATE_LOCK:
+                    if index < 0 or index >= len(store.sites):
+                        raise ValueError("站点序号无效")
+                    result = test_site(store, index, image)
                 self._send(200, result)
             elif parsed.path == "/api/restart-proxy":
                 result = restart_proxy()
