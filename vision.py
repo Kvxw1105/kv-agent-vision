@@ -33,6 +33,11 @@ import urllib.request
 
 DEFAULT_PROMPT = "请详细描述这张图片中的内容。"
 
+# 浏览器 UA:部分站点(如 OpenCodeGo)的 Cloudflare 防护会拦截 urllib 默认 UA
+# (Python-urllib/3.x → HTTP 403 error code 1010),带浏览器 UA 可正常访问
+_BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+
 # 深度结构化描述(默认):不仅说出"有什么",还给出位置、布局、细节与推理,
 # 使下游主模型(如 DeepSeek)能基于高质量描述完成推理工作。
 DETAILED_PROMPT = """请对这张图片进行专业、细致的视觉分析,输出结构化中文描述。请按以下层次组织(不适用的小节可省略,但位置信息必须尽量具体):
@@ -208,7 +213,11 @@ def describe_image(image_url, prompt=None, max_tokens=16384, apply_lang=True):
         request = urllib.request.Request(
             base_url + "/chat/completions",
             data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json", "Authorization": "Bearer " + api_key},
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + api_key,
+                "User-Agent": _BROWSER_UA,
+            },
         )
         # 强制直连，绕过系统代理（Windows 系统代理可能导致连接重置/SSL EOF）
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
