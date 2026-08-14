@@ -71,12 +71,14 @@ python vision.py <图片路径> --ocr                  # OCR(带位置)
 python vision.py <图片路径> --simple               # 简短概览
 python vision.py <图片路径> --coords               # 坐标增强:对象/文字/UI 附加百分比坐标 (x%,y%,w%,h%)
 python vision.py <图片路径> --colors               # 色彩增强:对象颜色附加精确 HEX 色值
+python vision.py <图片路径> --auto                 # 自适应:视觉模型按图片内容自决是否附加坐标/色值
 python vision.py <图1> <图2> <图3>                 # 多图并发
 ```
 
 > **坐标 / 色彩增强档**(`--coords` / `--colors`,可组合):默认关闭以控制上下文占比
 > (全开约 +40% 输出)。坐标档服务**定位/点击/裁切**(UI 自动化),色彩档服务
-> **设计复刻/取色**;需要时按任务开启。
+> **设计复刻/取色**;需要时按任务开启。`--auto` 让视觉模型按图片内容自决
+> (UI 截图自动开坐标、纯内容图保持简洁),显式档位优先。
 
 接入 Skill 框架:把 `SKILL.md` + `vision.py` + `.env` 放进目标 Agent 的 skills 目录;详细使用提示词见 `PROMPT.md`。
 
