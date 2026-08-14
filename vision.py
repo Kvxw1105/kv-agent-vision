@@ -72,6 +72,17 @@ COLORS_HINT = """
 
 【色值标注(已开启)】对每个对象给出精确颜色 HEX 值(如 #2563EB),覆盖背景、文字、
 边框与主色调;近似色给估算 HEX 并标注"约"。"""
+
+# 自适应增强(可选):由视觉模型按图片内容判断是否需要坐标/色值
+AUTO_HINT = """
+
+【自适应增强(已开启)】请根据图片内容自行判断是否启用以下增强,并在描述开头
+用一行说明"已启用:坐标/色值/无":
+- 若图中存在 ≥1 个可交互 UI 元素(按钮/输入框/链接/菜单/图表可点区域等)或需要
+  精确定位的对象 → 启用坐标标注 (x%,y%,w%,h%)
+- 若图中存在 ≥2 种具有设计意义的颜色(海报/UI/数据可视化/商标) → 启用精确 HEX 色值标注
+- 纯内容照片/风景/文档扫描等无需定位或取色 → 不启用,保持简洁
+只在判断有价值时启用;拿不准时,UI 截图倾向坐标,设计图倾向色值。"""
 LANG_INSTRUCTIONS = {
     "zh": "请使用简体中文回答。",
     "en": "Please respond in English.",
@@ -248,11 +259,14 @@ def build_prompt(args):
         base = DEFAULT_PROMPT
     else:
         base = DETAILED_PROMPT
-    # 可选增强:坐标(定位/点击/裁切)与色值(设计复刻),默认关闭以控制上下文占比
+    # 可选增强:坐标(定位/点击/裁切)与色值(设计复刻),默认关闭以控制上下文占比。
+    # 显式档位优先;未显式指定且开启 auto 时,由视觉模型按图片内容自决。
     if getattr(args, "coords", False):
         base += COORDS_HINT
     if getattr(args, "colors", False):
         base += COLORS_HINT
+    if getattr(args, "auto", False) and not (getattr(args, "coords", False) or getattr(args, "colors", False)):
+        base += AUTO_HINT
     return base
 
 
@@ -264,6 +278,7 @@ def main():
     parser.add_argument("--simple", action="store_true", help="简短描述模式(仅基础描述，不启用深度结构化描述)")
     parser.add_argument("--coords", action="store_true", help="坐标增强:对象/文字/UI 附加百分比坐标 (x%,y%,w%,h%),供定位/点击/裁切")
     parser.add_argument("--colors", action="store_true", help="色彩增强:对象颜色附加精确 HEX 色值,供设计复刻/取色")
+    parser.add_argument("--auto", action="store_true", help="自适应增强:由视觉模型按图片内容判断是否附加坐标/色值(显式档位优先)")
     parser.add_argument("--lang", default="", help="输出语言 zh/en，覆盖 env 的 LANG")
     parser.add_argument("--max-tokens", type=int, default=16384)
     parser.add_argument("--env-file", default="", help="指定 env 配置文件路径")
