@@ -66,6 +66,10 @@ DESCRIBE_TOOL = {
                 "type": "boolean",
                 "description": "可选:true 时对象颜色附加精确 HEX 色值,供设计复刻/取色(会增加输出长度)",
             },
+            "auto": {
+                "type": "boolean",
+                "description": "可选:true 时由视觉模型按图片内容自动判断是否附加坐标/色值(显式 coords/colors 优先;探索性看图推荐)",
+            },
         },
         "required": ["image"],
     },
@@ -91,6 +95,7 @@ def _call_describe_image(args):
         simple=bool(args.get("simple", False)),
         coords=bool(args.get("coords", False)),
         colors=bool(args.get("colors", False)),
+        auto=bool(args.get("auto", False)),
     )
     prompt = vision.build_prompt(ns)
     if image.startswith(("data:", "http://", "https://")):
